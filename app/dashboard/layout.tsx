@@ -42,21 +42,38 @@ export default function DashboardLayout({
   useEffect(() => {
     const fetchProfile = async () => {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      console.log("[v0] Dashboard: Fetching user...")
+      
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      console.log("[v0] Dashboard: User result:", { user, userError })
       
       if (!user) {
+        console.log("[v0] Dashboard: No user found, redirecting to login")
         router.push("/auth/login")
         return
       }
 
-      const { data: profileData } = await supabase
+      console.log("[v0] Dashboard: Fetching profile for user:", user.id)
+      const { data: profileData, error: profileError } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
         .single()
 
+      console.log("[v0] Dashboard: Profile result:", { profileData, profileError })
+
       if (profileData) {
         setProfile(profileData)
+      } else {
+        // Create a default profile if none exists
+        console.log("[v0] Dashboard: No profile found, using default")
+        setProfile({
+          id: user.id,
+          email: user.email || "",
+          full_name: "General Secretary",
+          role: "general_secretary",
+          state: null,
+        })
       }
       setIsLoading(false)
     }
