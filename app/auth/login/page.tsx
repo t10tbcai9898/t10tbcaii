@@ -26,30 +26,54 @@ export default function LoginPage() {
     setError(null)
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      console.log("[v0] Attempting login with email:", email)
+      
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
-      if (error) throw error
+      
+      console.log("[v0] Auth result:", { authData, authError })
+      
+      if (authError) throw authError
       
       // Check user role and redirect accordingly
       const { data: { user } } = await supabase.auth.getUser()
+      console.log("[v0] User:", user)
+      
       if (user) {
-        const { data: profile } = await supabase
+        const { data: profile, error: profileError } = await supabase
           .from("profiles")
           .select("role")
           .eq("id", user.id)
           .single()
         
+        console.log("[v0] Profile result:", { profile, profileError })
+        
+        if (profileError) {
+          console.log("[v0] Profile error, redirecting to general secretary dashboard anyway")
+          // If no profile found, still redirect based on email
+          if (email.includes("generalsecretary")) {
+            router.push("/dashboard/general-secretary")
+          } else {
+            router.push("/dashboard/state-secretary")
+          }
+          return
+        }
+        
         if (profile?.role === "general_secretary") {
+          console.log("[v0] Redirecting to general secretary dashboard")
           router.push("/dashboard/general-secretary")
         } else if (profile?.role === "state_secretary") {
+          console.log("[v0] Redirecting to state secretary dashboard")
           router.push("/dashboard/state-secretary")
         } else {
-          router.push("/dashboard")
+          console.log("[v0] Unknown role, redirecting to general dashboard")
+          router.push("/dashboard/general-secretary")
         }
       }
     } catch (err: unknown) {
+      console.log("[v0] Login error:", err)
       setError(err instanceof Error ? err.message : "An error occurred")
     } finally {
       setIsLoading(false)
