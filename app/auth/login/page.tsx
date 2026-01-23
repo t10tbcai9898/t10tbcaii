@@ -2,157 +2,231 @@
 
 import React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import Link from "next/link"
+import { usePathname, useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { Trophy, ArrowLeft } from "lucide-react"
+import {
+  Trophy,
+  Users,
+  UserPlus,
+  Settings,
+  LogOut,
+  Menu,
+  X,
+  LayoutDashboard,
+  Key,
+} from "lucide-react"
+import { cn } from "@/lib/utils"
 
-export default function LoginPage() {
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [error, setError] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+interface Profile {
+  id: string
+  email: string
+  full_name: string
+  role: "general_secretary" | "state_secretary"
+  state: string | null
+}
+
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const pathname = usePathname()
   const router = useRouter()
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const supabase = createClient()
-    setIsLoading(true)
-    setError(null)
-
-    try {
-      console.log("[v0] Attempting login with email:", email)
+  useEffect(() => {
+    const fetchProfile = async () => {
+      const supabase = createClient()
+      console.log("[v0] Dashboard: Fetching user...")
       
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      console.log("[v0] Dashboard: User result:", { user, userError })
       
-      console.log("[v0] Auth result:", { authData, authError })
-      
-      if (authError) throw authError
-      
-      // Check user role and redirect accordingly
-      const { data: { user } } = await supabase.auth.getUser()
-      console.log("[v0] User:", user)
-      
-      if (user) {
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", user.id)
-          .single()
-        
-        console.log("[v0] Profile result:", { profile, profileError })
-        
-        if (profileError) {
-          console.log("[v0] Profile error, redirecting to general secretary dashboard anyway")
-          // If no profile found, still redirect based on email
-          if (email.includes("generalsecretary")) {
-            router.push("/dashboard/general-secretary")
-          } else {
-            router.push("/dashboard/state-secretary")
-          }
-          return
-        }
-        
-        if (profile?.role === "general_secretary") {
-          console.log("[v0] Redirecting to general secretary dashboard")
-          router.push("/dashboard/general-secretary")
-        } else if (profile?.role === "state_secretary") {
-          console.log("[v0] Redirecting to state secretary dashboard")
-          router.push("/dashboard/state-secretary")
-        } else {
-          console.log("[v0] Unknown role, redirecting to general dashboard")
-          router.push("/dashboard/general-secretary")
-        }
+      if (!user) {
+        console.log("[v0] Dashboard: No user found, redirecting to login")
+        router.push("/auth/login")
+        return
       }
-    } catch (err: unknown) {
-      console.log("[v0] Login error:", err)
-      setError(err instanceof Error ? err.message : "An error occurred")
-    } finally {
+
+      console.log("[v0] Dashboard: Fetching profile for user:", user.id)
+      const { data: profileData, error: profileError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single()
+
+      console.log("[v0] Dashboard: Profile result:", { profileData, profileError })
+
+      if (profileData) {
+        setProfile(profileData)
+      } else {
+        // Create a default profile if none exists
+        console.log("[v0] Dashboard: No profile found, using default")
+        setProfile({
+          id: user.id,
+          email: user.email || "",
+          full_name: "General Secretary",
+          role: "general_secretary",
+          state: null,
+        })
+      }
       setIsLoading(false)
     }
+
+    fetchProfile()
+  }, [router])
+
+  const handleLogout = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.push("/auth/login")
+  }
+
+  const isGeneralSecretary = profile?.role === "general_secretary"
+
+  const navItems = [
+    {
+      href: isGeneralSecretary ? "/dashboard/general-secretary" : "/dashboard/state-secretary",
+      label: "Dashboard",
+      icon: LayoutDashboard,
+    },
+    {
+      href: isGeneralSecretary ? "/dashboard/general-secretary/players" : "/dashboard/state-secretary/players",
+      label: "Players",
+      icon: Users,
+    },
+    ...(isGeneralSecretary
+      ? [
+          {
+            href: "/dashboard/general-secretary/secretaries",
+            label: "State Secretaries",
+            icon: UserPlus,
+          },
+        ]
+      : []),
+    {
+      href: "/auth/change-password",
+      label: "Change Password",
+      icon: Key,
+    },
+  ]
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" />
+      </div>
+    )
   }
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-2 text-muted-foreground hover:text-primary mb-8 transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Home
+    <div className="min-h-screen bg-background">
+      {/* Mobile Header */}
+      <header className="lg:hidden bg-card border-b border-border p-4 flex items-center justify-between sticky top-0 z-50">
+        <Link href="/" className="flex items-center gap-2">
+          <div className="bg-primary rounded-full p-2">
+            <Trophy className="h-5 w-5 text-primary-foreground" />
+          </div>
+          <span className="font-bold text-foreground">TTBCAI</span>
         </Link>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="text-foreground"
+        >
+          {sidebarOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+        </Button>
+      </header>
 
-        <Card className="bg-card border-border">
-          <CardHeader className="text-center">
-            <div className="flex justify-center mb-4">
-              <div className="bg-primary rounded-full p-3">
-                <Trophy className="h-8 w-8 text-primary-foreground" />
+      <div className="flex">
+        {/* Sidebar */}
+        <aside
+          className={cn(
+            "fixed lg:sticky top-0 left-0 z-40 h-screen w-64 bg-card border-r border-border transition-transform lg:translate-x-0",
+            sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          )}
+        >
+          <div className="flex flex-col h-full">
+            {/* Logo */}
+            <div className="p-6 border-b border-border hidden lg:block">
+              <Link href="/" className="flex items-center gap-2">
+                <div className="bg-primary rounded-full p-2">
+                  <Trophy className="h-6 w-6 text-primary-foreground" />
+                </div>
+                <div>
+                  <span className="font-bold text-foreground">TTBCAI</span>
+                  <p className="text-xs text-muted-foreground">
+                    {isGeneralSecretary ? "General Secretary" : "State Secretary"}
+                  </p>
+                </div>
+              </Link>
+            </div>
+
+            {/* Profile */}
+            <div className="p-4 border-b border-border">
+              <div className="bg-secondary rounded-lg p-3">
+                <p className="font-semibold text-foreground text-sm truncate">
+                  {profile?.full_name || "Secretary"}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {profile?.email}
+                </p>
+                {profile?.state && (
+                  <p className="text-xs text-primary mt-1">{profile.state}</p>
+                )}
               </div>
             </div>
-            <CardTitle className="text-2xl text-foreground">Secretary Login</CardTitle>
-            <CardDescription className="text-muted-foreground">
-              Login to access your dashboard
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleLogin}>
-              <div className="flex flex-col gap-6">
-                <div className="grid gap-2">
-                  <Label htmlFor="email" className="text-foreground">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="secretary@ttbcai.org"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="bg-input border-border text-foreground"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="password" className="text-foreground">Password</Label>
-                    <Link
-                      href="/auth/forgot-password"
-                      className="text-sm text-primary hover:underline"
-                    >
-                      Forgot password?
-                    </Link>
-                  </div>
-                  <Input
-                    id="password"
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="bg-input border-border text-foreground"
-                  />
-                </div>
-                {error && <p className="text-sm text-destructive">{error}</p>}
-                <Button
-                  type="submit"
-                  className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-                  disabled={isLoading}
-                >
-                  {isLoading ? "Logging in..." : "Login"}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
 
-        <p className="text-center text-sm text-muted-foreground mt-6">
-          Contact the General Secretary if you need access credentials.
-        </p>
+            {/* Navigation */}
+            <nav className="flex-1 p-4 space-y-1">
+              {navItems.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setSidebarOpen(false)}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
+                    pathname === item.href
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  )}
+                >
+                  <item.icon className="h-5 w-5" />
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+
+            {/* Logout */}
+            <div className="p-4 border-t border-border">
+              <Button
+                variant="ghost"
+                className="w-full justify-start text-muted-foreground hover:text-foreground hover:bg-secondary"
+                onClick={handleLogout}
+              >
+                <LogOut className="h-5 w-5 mr-3" />
+                Logout
+              </Button>
+            </div>
+          </div>
+        </aside>
+
+        {/* Overlay */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 bg-background/80 z-30 lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
+        {/* Main Content */}
+        <main className="flex-1 min-h-screen">{children}</main>
       </div>
     </div>
   )
